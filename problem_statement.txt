@@ -1,0 +1,8 @@
+The Coupled Financial Infrastructure Failure & Systemic Risk Simulator models how operational failures in financial infrastructure can propagate into institutional liquidity stress and broader financial contagion.
+
+Using PostgreSQL and Neo4j, the system represents infrastructure dependencies and inter-institutional exposure networks to simulate cascading failures across both operational and financial layers.
+
+The platform identifies critical nodes, traces probable failure-propagation paths, measures systemic risk, and evaluates possible mitigation strategies to reduce the impact of cascading disruptions.
+
+
+gh : https://github.com/bhuvibhardwaj/Coupled-Financial-Infrastructure-Failure-Systemic-Risk-Simulator

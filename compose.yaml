@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: systemic_risk
+      POSTGRES_USER: simulator
+      POSTGRES_PASSWORD: simulator
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  neo4j:
+    image: neo4j:5
+    environment:
+      NEO4J_AUTH: neo4j/change-this-password
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4j_data:/data
+volumes:
+  postgres_data:
+  neo4j_data:
