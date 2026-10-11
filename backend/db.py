@@ -114,3 +114,8 @@ def snapshot(banks, services, dependencies, exposures) -> dict:
 def fingerprint(data: dict) -> str:
     raw = json.dumps(data, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def lock_network(conn) -> None:
+    """Serialize edits, graph rebuilds and new runs for this small demo."""
+    conn.execute("SELECT pg_advisory_xact_lock(641908)")

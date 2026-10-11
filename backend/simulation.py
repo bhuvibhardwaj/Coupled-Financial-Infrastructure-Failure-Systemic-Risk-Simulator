@@ -1,6 +1,6 @@
 """Small, deterministic financial cascade used by the API and tests."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
 
 CENT = Decimal("0.01")
@@ -41,6 +41,7 @@ class Impact:
     financial_loss: Decimal = Decimal("0.00")
     stress_pct: Decimal = Decimal("0.00")
     defaulted: bool = False
+    propagation_path: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +57,7 @@ def simulate(
     exposures: list[Exposure],
     failed_service_id: int,
     severity: int,
+    service_name: str | None = None,
 ) -> Result:
     if not 0 <= severity <= 100:
         raise ValueError("Severity must be between 0 and 100")
@@ -76,6 +78,10 @@ def simulate(
         if loss > 0:
             impacts[edge.bank_id].operational_loss += loss
             impacts[edge.bank_id].first_affected_round = 0
+            impacts[edge.bank_id].propagation_path = [
+                service_name or f"Service #{failed_service_id}",
+                by_id[edge.bank_id].name,
+            ]
 
     for edge in exposures:
         if (edge.creditor_id not in by_id or edge.debtor_id not in by_id
@@ -93,12 +99,17 @@ def simulate(
     while newly_defaulted:
         processed_defaults.update(newly_defaulted)
         round_losses: dict[int, Decimal] = {}
-        for edge in exposures:
+        for edge in sorted(exposures, key=lambda item: (item.debtor_id, item.creditor_id)):
             if edge.debtor_id in newly_defaulted:
                 loss = money(edge.amount * (1 - edge.recovery_rate))
                 round_losses[edge.creditor_id] = (
                     round_losses.get(edge.creditor_id, Decimal("0.00")) + loss
                 )
+                if loss > 0 and not impacts[edge.creditor_id].propagation_path:
+                    impacts[edge.creditor_id].propagation_path = [
+                        *impacts[edge.debtor_id].propagation_path,
+                        by_id[edge.creditor_id].name,
+                    ]
         for creditor_id, loss in round_losses.items():
             if loss <= 0:
                 continue

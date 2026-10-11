@@ -67,6 +67,21 @@ def rebuild(data: dict, version: str) -> None:
                     "CREATE (:RiskNetworkVersion {fingerprint: $version})",
                     version=version,
                 ).consume()
+                counts = tx.run(
+                    "MATCH (n:RiskInstitution) WITH count(n) AS banks "
+                    "MATCH (s:RiskInfrastructure) WITH banks, count(s) AS services "
+                    "OPTIONAL MATCH (:RiskInstitution)-[d:DEPENDS_ON]->(:RiskInfrastructure) "
+                    "WITH banks, services, count(d) AS dependencies "
+                    "OPTIONAL MATCH (:RiskInstitution)-[e:EXPOSED_TO]->(:RiskInstitution) "
+                    "RETURN banks, services, dependencies, count(e) AS exposures"
+                ).single()
+                if counts is None or (
+                    counts["banks"] != len(data["banks"])
+                    or counts["services"] != len(data["services"])
+                    or counts["dependencies"] != len(data["dependencies"])
+                    or counts["exposures"] != len(data["exposures"])
+                ):
+                    raise RuntimeError("Neo4j rebuild did not preserve all network records")
 
             session.execute_write(write)
 
@@ -102,3 +117,49 @@ def load_edges(expected_version: str) -> tuple[list[Dependency], list[Exposure]]
         for r in exposure_rows
     ]
     return dependencies, exposures
+
+
+def network_analysis(expected_version: str) -> dict:
+    """Graph records and Cypher aggregations for the network screen."""
+    with driver() as db:
+        with db.session() as session:
+            found = session.run(
+                "MATCH (v:RiskNetworkVersion) RETURN v.fingerprint AS version"
+            ).single()
+            if found is None or found["version"] != expected_version:
+                raise StaleGraphError("Graph is missing or out of date. Run graph sync.")
+            services = session.run(
+                "MATCH (s:RiskInfrastructure) "
+                "OPTIONAL MATCH (b:RiskInstitution)-[:DEPENDS_ON]->(s) "
+                "RETURN s.id AS id, s.name AS name, count(b) AS dependent_banks "
+                "ORDER BY dependent_banks DESC, name"
+            ).data()
+            banks = session.run(
+                "MATCH (d:RiskInstitution) "
+                "OPTIONAL MATCH (c:RiskInstitution)-[r:EXPOSED_TO]->(d) "
+                "RETURN d.id AS id, d.name AS name, "
+                "coalesce(sum(toFloat(r.amount)), 0) AS creditor_exposure "
+                "ORDER BY creditor_exposure DESC, name"
+            ).data()
+    return {"service_ranking": services, "bank_ranking": banks}
+
+
+def candidate_paths(service_id: int, target_bank_id: int, expected_version: str):
+    """Cypher variable-length path candidates; run results filter actual paths."""
+    with driver() as db:
+        with db.session() as session:
+            found = session.run(
+                "MATCH (v:RiskNetworkVersion) RETURN v.fingerprint AS version"
+            ).single()
+            if found is None or found["version"] != expected_version:
+                raise StaleGraphError("Graph is missing or out of date. Run graph sync.")
+            rows = session.run(
+                "MATCH (s:RiskInfrastructure {id: $service_id})<-[:DEPENDS_ON]-"
+                "(origin:RiskInstitution) "
+                "MATCH p=(target:RiskInstitution {id: $bank_id})-"
+                "[:EXPOSED_TO*0..5]->(origin) "
+                "RETURN [n IN nodes(p) | n.id] AS reverse_bank_ids "
+                "ORDER BY length(p) LIMIT 20",
+                service_id=service_id, bank_id=target_bank_id,
+            ).data()
+    return [list(reversed(row["reverse_bank_ids"])) for row in rows]

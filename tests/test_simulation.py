@@ -27,6 +27,10 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(result.impacts[0].operational_loss, D("120.00"))
         self.assertEqual(result.impacts[1].financial_loss, D("60.00"))
         self.assertEqual(result.impacts[1].first_affected_round, 1)
+        self.assertEqual(
+            result.impacts[1].propagation_path,
+            ["Service #1", "Bank A", "Bank B"],
+        )
         self.assertEqual(result.impacts[2].financial_loss, D("72.00"))
         self.assertEqual(result.impacts[2].stress_pct, D("96.00"))
         self.assertEqual(result.impacts[2].first_affected_round, 2)
@@ -67,6 +71,23 @@ class SimulationTests(unittest.TestCase):
         )
         self.assertEqual(result.default_count, 0)
         self.assertEqual(result.risk_score, D("0.00"))
+
+    def test_extra_buffer_stops_the_second_default(self):
+        result = simulate(
+            [Bank(1, "Bank A", D("100")), Bank(2, "Bank B", D("70")),
+             Bank(3, "Bank C", D("75"))],
+            [Dependency(1, 1, D("120"))],
+            [Exposure(2, 1, D("80"), D("0.25")),
+             Exposure(3, 2, D("90"), D("0.20"))],
+            1, 100, "Payment Rail",
+        )
+        self.assertEqual(result.default_count, 1)
+        self.assertEqual(result.impacts[1].stress_pct, D("85.71"))
+        self.assertEqual(result.impacts[2].financial_loss, D("0.00"))
+        self.assertEqual(
+            result.impacts[1].propagation_path,
+            ["Payment Rail", "Bank A", "Bank B"],
+        )
 
 
 if __name__ == "__main__":

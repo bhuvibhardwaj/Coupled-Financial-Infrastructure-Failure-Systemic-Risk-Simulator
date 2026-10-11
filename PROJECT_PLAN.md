@@ -98,13 +98,13 @@ has a primary key.
 
 | Table | Main data and relationships |
 |---|---|
-| `users` | Name, unique email, password hash and role. |
+| `users` / `user_sessions` | Name, unique email, password hash and role; hashed session token and expiry. |
 | `institutions` | Bank name and initial liquidity buffer. |
 | `infrastructure` | Service name and category. |
 | `dependencies` | Bank FK, service FK and estimated loss at full failure. Unique bank/service pair. |
 | `exposures` | Creditor-bank FK, debtor-bank FK, amount and recovery rate. Unique directed bank pair. |
 | `scenarios` | Owner FK, name, failed-service FK and severity. |
-| `simulation_runs` | Scenario FK, creator FK, status, timestamps, score, formula version and input snapshot. Optional baseline-run FK, buffer-bank FK and extra-buffer amount for comparisons. |
+| `simulation_runs` | Scenario FK, creator FK, timestamps, score, formula version and input snapshot. Optional baseline-run FK, buffer-bank FK and extra-buffer amount for comparisons. |
 | `run_impacts` | Run FK, bank FK, first affected round, operational loss, financial loss and stress percentage. Unique run/bank pair. |
 | `audit_logs` | Timestamp, changed table/record and old/new values for audited master-data changes. |
 
@@ -119,10 +119,10 @@ by scenarios/results. Unreferenced demo records can demonstrate deletion.
 
 ### Neo4j model
 
-- `(:Institution {institutionId, name})`
-- `(:Infrastructure {infraId, name})`
-- `(bank)-[:DEPENDS_ON {lossAtFullFailure}]->(service)`
-- `(creditor)-[:EXPOSED_TO {amount, recoveryRate}]->(debtor)`
+- `(:RiskInstitution {id, name})`
+- `(:RiskInfrastructure {id, name})`
+- `(bank)-[:DEPENDS_ON {loss}]->(service)`
+- `(creditor)-[:EXPOSED_TO {amount, recovery_rate}]->(debtor)`
 
 Enforce unique node IDs. A failed service affects incoming `DEPENDS_ON` banks;
 a defaulted debtor affects incoming `EXPOSED_TO` creditors. Document the
@@ -150,9 +150,10 @@ Use one fixed rule set:
    transaction.
 
 Rerun the same input snapshot with an extra buffer for one bank. Compare the
-score and default count without modifying master data. If the current graph no
-longer matches the saved snapshot, rebuild from that snapshot for the comparison
-and mark the master-data graph stale afterward. Show failed runs clearly.
+score and default count without modifying master data or rebuilding the shared
+Neo4j graph. The original run already saved the graph-derived relationships,
+which makes the comparison reproducible even after later edits. Show failed
+runs clearly.
 
 **Worked example:** A service failure costs Bank A 120 units against a buffer
 of 100, so A defaults. Bank B has an exposure of 80 to A with a recovery rate of
@@ -251,3 +252,10 @@ contribution.
 Use the linked repository as a reference. The assignment requires original
 design and implementation; confirm the title is unique within the section and
 develop the team's own schema, rules and demonstration data.
+
+## Implementation status
+
+The planned features, SQL/Cypher demonstrations and design documentation are
+implemented in the repository. The full-system run, live database results,
+application screenshots and two members' final contribution evidence remain
+for the submission stage; see `docs/TEST_STATUS.md`.

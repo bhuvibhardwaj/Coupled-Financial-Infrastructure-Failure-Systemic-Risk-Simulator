@@ -1,26 +1,26 @@
 # Systemic Risk Simulator
 
-This is the first working milestone of the DBMS mini project. A Next.js page
-lets you choose an infrastructure service and severity. FastAPI uses
-PostgreSQL for the fictional network and saved results, Neo4j for dependency
-and exposure edges, and a Python cascade model to calculate bank stress.
+A DBMS mini project with a Next.js web app, Python/FastAPI backend,
+PostgreSQL records, and a Neo4j dependency/exposure graph. It simulates how
+a fictional infrastructure failure can lead to bank liquidity stress and
+financial contagion. See [the project plan](PROJECT_PLAN.md) and
+[design documentation](docs/DESIGN.md).
 
-The [project plan](PROJECT_PLAN.md) describes the remaining features. This
-milestone has one end-to-end scenario flow and saved run history; login, admin
-editing, graph visualisation, mitigation and the remaining advanced-database
-demonstrations are scheduled next. **Do not expose this unauthenticated demo on
-a public network.**
+The app includes Admin/Analyst login, editable network data, graph rebuild,
+scenario history, run paths, Cypher critical-node rankings, and a saved
+liquidity-buffer comparison. The data and score are educational examples,
+not financial forecasts.
 
-## Prerequisites
+## Requirements
 
-- Standard Python 3.11 or newer, with `venv` and `pip` (recommended over MSYS
-  Python on Windows, which may need to compile Pydantic from source)
-- Node.js 20.9 or newer, with npm
-- Docker Desktop running (or local PostgreSQL and Neo4j installations)
+- Standard Python 3.11+ with `venv` and `pip` (recommended over MSYS Python on
+  Windows, which may compile Pydantic from source)
+- Node.js 20.9+ and npm
+- Docker Desktop, or separate PostgreSQL 17 and Neo4j 5 installations
 
-## Set up on Windows PowerShell
+## Set up locally (PowerShell)
 
-From the repository root:
+From the project root:
 
 ```powershell
 Copy-Item .env.example .env
@@ -33,16 +33,24 @@ $projectPython = if (Test-Path '.venv\Scripts\python.exe') {
 }
 & $projectPython -m pip install -r backend\requirements.txt
 & $projectPython -m backend.setup_db
+& $projectPython -m backend.seed_users
 & $projectPython -m backend.sync_graph
 ```
 
-The executable is under `.venv\Scripts` for standard Windows Python and
-`.venv\bin` for MSYS Python. If your default `python` does not include `pip`,
-use a Python installation that supports `venv` and `pip`. The `.env` values
-match the local Docker Compose services; change the passwords outside this
-local demo. The `.env` file is ignored by Git.
+`seed_users` prompts for names, emails and passwords for one Admin and one
+Analyst. Use distinct passwords of at least 12 characters. It stores only
+salted password hashes. Re-running it updates those two accounts, so use it
+deliberately. `.env` contains the local database URLs and is ignored by Git;
+the values in `.env.example` match Docker Compose. Change the demo credentials
+for non-local use, and set `COOKIE_SECURE=true` when serving over HTTPS.
 
-Start the API in one terminal:
+`backend.setup_db` creates or updates the schema and inserts the fictional
+six-bank/four-service dataset. It is safe to rerun without deleting saved runs.
+`backend.sync_graph` rebuilds only this project's labelled Neo4j nodes.
+After Admin edits, use the Network page's **Rebuild Neo4j network** button
+before starting a new scenario.
+
+Start the API from the project root in one terminal:
 
 ```powershell
 $projectPython = if (Test-Path '.venv\Scripts\python.exe') {
@@ -57,34 +65,43 @@ Start the web app in another terminal:
 
 ```powershell
 Set-Location frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open `http://localhost:3000`. The FastAPI documentation is at
-`http://localhost:8000/docs`. Run `& $projectPython -m backend.sync_graph` again after
-changing the network tables. If the graph does not match PostgreSQL, the API
-returns a clear conflict error instead of silently simulating stale data.
+Open `http://localhost:3000`. API documentation is at
+`http://localhost:8000/docs`. Next.js forwards `/api/*` to FastAPI; the
+frontend itself does not hold database credentials.
 
-## Test the calculation
+## Demo flow
+
+1. Sign in as Admin and open **Network**. Inspect the banks, services,
+   dependency lines, creditor arrows and Cypher rankings.
+2. Open **Scenarios**, select **Payment Rail**, set severity to 100%, and run.
+   Bank A and Bank B default; the expected average stress is 49.33%.
+3. Open a bank's **Inspect** path to see the recorded propagation chain.
+4. On the run page, add 20 to Bank B's liquidity buffer and compare. Bank B
+   no longer defaults; the original master data is unchanged.
+5. As Admin, edit a bank/service, inspect the audit list, rebuild the graph,
+   and run again. As Analyst, check that edit/rebuild actions are unavailable
+   and API-protected.
+
+## Focused checks and DBMS query files
 
 ```powershell
 python -m unittest discover -s tests -v
+python -m compileall -q backend tests
 ```
 
-The Payment Rail example should produce two defaults and an average stress of
-49.33%. Bank A has 120 units of operational loss, Bank B loses 60 through its
-exposure to A, and Bank C loses 72 through its exposure to B. The six-bank
-average includes three unaffected banks with zero stress.
+In `frontend`, use `npm run typecheck` and `npm run build`.
+[`sql/demo_queries.sql`](sql/demo_queries.sql) contains DDL, DML,
+JOIN/GROUP BY/HAVING/ORDER BY, aggregate, subquery, view and function
+demonstrations. [`cypher/demo_queries.cypher`](cypher/demo_queries.cypher)
+contains dependency, aggregation and variable-length path queries. These
+demo files are not run automatically.
 
-## Current data flow
-
-1. `backend.setup_db` creates PostgreSQL tables and seeds six banks/four services.
-2. `backend.sync_graph` projects the two relationship types into Neo4j.
-3. Next.js calls the FastAPI endpoints through `/api` rewrites.
-4. FastAPI checks the graph version, calculates the cascade and saves a scenario,
-   run and all bank impacts in one PostgreSQL transaction.
-5. The UI reads the saved run and displays the impact table and recent history.
-
-The demo's seed data is fictional and its risk score is a teaching metric, not
-a financial forecast.
+The full browser-to-databases system checks, screenshots and observed results
+are intentionally deferred; see [verification status](docs/TEST_STATUS.md).
+For submission, record both team members' actual contributions and commits,
+plus the live results and screenshots. Do not treat the demo data as real-world
+financial advice.
