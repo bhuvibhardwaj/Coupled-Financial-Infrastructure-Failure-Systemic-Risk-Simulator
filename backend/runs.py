@@ -16,10 +16,14 @@ from backend.simulation import Bank, Dependency, Exposure, Result, simulate
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
 
+class FailureInput(BaseModel):
+    service_id: int = Field(gt=0)
+    severity: int = Field(ge=0, le=100)
+
+
 class RunRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    failed_service_id: int = Field(gt=0)
-    severity: int = Field(ge=0, le=100)
+    failures: list[FailureInput] = Field(min_length=1)
 
 
 class ComparisonRequest(BaseModel):
@@ -42,15 +46,48 @@ def owned_run(conn, run_id: int, user: dict):
     return row
 
 
+def snapshot_failures(saved: dict) -> list[dict]:
+    """Failed services stored in a snapshot, tolerating earlier single-service runs."""
+    if saved.get("failures"):
+        return saved["failures"]
+    return [{"service_id": saved["failed_service_id"], "severity": saved["severity"]}]
+
+
+def build_failures(requested: list[FailureInput], services: list[dict]) -> list[dict]:
+    """Attach service names and reject unknown or duplicated services."""
+    by_service = {s["id"]: s for s in services}
+    selected: set[int] = set()
+    failures = []
+    for failure in requested:
+        if failure.service_id not in by_service:
+            raise HTTPException(404, f"Service #{failure.service_id} not found")
+        if failure.service_id in selected:
+            raise HTTPException(422, "Each service can be selected once")
+        selected.add(failure.service_id)
+        failures.append({
+            "service_id": failure.service_id,
+            "severity": failure.severity,
+            "service_name": by_service[failure.service_id]["name"],
+        })
+    return failures
+
+
 def save_result(
     conn, scenario_id: int, user_id: int, data: dict, result: Result,
     baseline_run_id: int | None = None, bank_id: int | None = None,
     extra_buffer: Decimal | None = None,
 ) -> int:
-    service_name = next(
-        s["name"] for s in data["network"]["services"]
-        if s["id"] == data["failed_service_id"]
-    )
+    failures = data.get("failures")
+    if failures:
+        service_name = " + ".join(
+            failure.get("service_name") or f"Service #{failure['service_id']}"
+            for failure in failures
+        )
+    else:
+        service_name = next(
+            s["name"] for s in data["network"]["services"]
+            if s["id"] == data["failed_service_id"]
+        )
     run = conn.execute(
         "INSERT INTO simulation_runs "
         "(scenario_id, created_by, risk_score, default_count, input_snapshot, "
@@ -100,7 +137,7 @@ def recent_runs(
 @router.get("/{run_id}")
 def get_run(run_id: Annotated[int, Path(gt=0)], user: dict = Depends(current_user)):
     with connect() as conn:
-        owned_run(conn, run_id, user)
+        run = owned_run(conn, run_id, user)
         summary = conn.execute(
             "SELECT * FROM v_run_summary WHERE run_id = %s", (run_id,)
         ).fetchone()
@@ -117,7 +154,19 @@ def get_run(run_id: Annotated[int, Path(gt=0)], user: dict = Depends(current_use
         for impact in impacts:
             if isinstance(impact["propagation_path"], str):
                 impact["propagation_path"] = json.loads(impact["propagation_path"])
-        return {**summary, "impacts": impacts}
+        saved = run["input_snapshot"]
+        if isinstance(saved, str):
+            saved = json.loads(saved)
+        names = {s["id"]: s["name"] for s in saved["network"]["services"]}
+        failures = [
+            {
+                "service_id": failure["service_id"],
+                "severity": failure["severity"],
+                "service_name": failure.get("service_name") or names.get(failure["service_id"]),
+            }
+            for failure in snapshot_failures(saved)
+        ]
+        return {**summary, "failures": failures, "impacts": impacts}
 
 
 @router.post("", status_code=201)
@@ -127,9 +176,9 @@ def create_run(request: RunRequest, user: dict = Depends(current_user)):
     with connect() as conn:
         lock_network(conn)
         banks, services, sql_dependencies, sql_exposures = load_network(conn)
-        service = next((s for s in services if s["id"] == request.failed_service_id), None)
-        if service is None:
-            raise HTTPException(404, "Service not found")
+        failures = build_failures(request.failures, services)
+        severities = {failure["service_id"]: failure["severity"] for failure in failures}
+        service_names = {failure["service_id"]: failure["service_name"] for failure in failures}
         data = snapshot(banks, services, sql_dependencies, sql_exposures)
         try:
             dependencies, exposures = load_edges(fingerprint(data))
@@ -137,20 +186,19 @@ def create_run(request: RunRequest, user: dict = Depends(current_user)):
             raise HTTPException(409, str(exc)) from exc
         except Neo4jError as exc:
             raise HTTPException(503, "Neo4j is unavailable") from exc
-        result = simulate(
-            banks, dependencies, exposures, request.failed_service_id,
-            request.severity, service["name"],
-        )
+        result = simulate(banks, dependencies, exposures, severities, service_names)
+        primary = request.failures[0]
         data_for_run = {
             "network": data,
-            "failed_service_id": request.failed_service_id,
-            "severity": request.severity,
+            "failures": failures,
+            "failed_service_id": primary.service_id,
+            "severity": primary.severity,
             "formula_version": 1,
         }
         scenario = conn.execute(
             "INSERT INTO scenarios (name, failed_infrastructure_id, severity, owner_id) "
             "VALUES (%s, %s, %s, %s) RETURNING id",
-            (request.name.strip(), request.failed_service_id, request.severity, user["id"]),
+            (request.name.strip(), primary.service_id, primary.severity, user["id"]),
         ).fetchone()
         run_id = save_result(conn, scenario["id"], user["id"], data_for_run, result)
         return {"run_id": run_id}
@@ -187,14 +235,10 @@ def compare_run(
             Exposure(e["creditor_id"], e["debtor_id"], Decimal(e["amount"]),
                      Decimal(e["recovery_rate"])) for e in network["exposures"]
         ]
-        service_name = next(
-            s["name"] for s in network["services"]
-            if s["id"] == saved["failed_service_id"]
-        )
-        result = simulate(
-            banks, dependencies, exposures, saved["failed_service_id"],
-            saved["severity"], service_name,
-        )
+        failures = snapshot_failures(saved)
+        severities = {failure["service_id"]: failure["severity"] for failure in failures}
+        service_names = {s["id"]: s["name"] for s in network["services"]}
+        result = simulate(banks, dependencies, exposures, severities, service_names)
         compared_snapshot = {
             **saved,
             "mitigation": {"bank_id": request.bank_id,
@@ -232,9 +276,10 @@ def trace_run(
         network = saved["network"]
         by_name = {b["name"]: b["id"] for b in network["banks"]}
         expected_ids = [by_name[name] for name in path[1:]] if path else []
+        failed_service_ids = [f["service_id"] for f in snapshot_failures(saved)]
         try:
             candidates = candidate_paths(
-                saved["failed_service_id"], bank_id, fingerprint(network)
+                failed_service_ids, bank_id, fingerprint(network)
             )
             return {"path": path, "graph_current": True,
                     "verified_in_graph": expected_ids in candidates if path else False}

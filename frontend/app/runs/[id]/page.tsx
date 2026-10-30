@@ -9,6 +9,18 @@ import { useSession } from "../../../lib/session";
 
 type Trace = { path: string[]; graph_current: boolean; verified_in_graph: boolean | null };
 
+function scenarioLine(detail: RunDetail): string {
+  const failures = detail.failures ?? [];
+  if (failures.length === 1) {
+    const only = failures[0];
+    return `${only.service_name ?? `Service #${only.service_id}`} · ${only.severity}% severity`;
+  }
+  if (failures.length > 1) {
+    return failures.map(f => `${f.service_name ?? `Service #${f.service_id}`} (${f.severity}%)`).join(" · ");
+  }
+  return `${detail.failed_service} · ${detail.severity}% severity`;
+}
+
 export default function RunPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -65,7 +77,7 @@ export default function RunPage() {
     {!run ? <p className="hint">Loading saved run…</p> : <>
       <header className="intro"><p className="eyebrow">Saved run #{run.run_id}</p>
         <h1>{run.scenario_name}</h1>
-        <p>{run.failed_service} · {run.severity}% severity · {new Date(run.created_at).toLocaleString()}</p>
+        <p>{scenarioLine(run)} · {new Date(run.created_at).toLocaleString()}</p>
         {run.baseline_run_id !== null && <p><Link href={`/runs/${run.baseline_run_id}`}>View original run #{run.baseline_run_id}</Link></p>}
       </header>
       <section className="metrics">

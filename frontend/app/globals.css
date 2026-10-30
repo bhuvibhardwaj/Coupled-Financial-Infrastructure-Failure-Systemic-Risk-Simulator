@@ -45,6 +45,11 @@ th { color: #536d7c; font-weight: 700; background: #f9fbfc; }
 .button-link, .primary-button, .stack-form button, .compare-form button, .editor-form button[type=submit] { display: inline-block; text-decoration: none; color: #fff; background: #116b74; border: 0; border-radius: 8px; font-weight: 700; padding: 11px 17px; }
 .button-link:hover { text-decoration: none; background: #0c555d; }
 .with-top-gap { margin-top: 22px; }
+.field-label { margin: 0 0 6px; font-size: .89rem; font-weight: 600; }
+.service-choice { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.service-choice small { color: #687d8c; font-weight: 400; }
+.service-option input[type="checkbox"] { width: 18px; height: 18px; }
+.service-option .severity-input { max-width: 120px; }
 .history-list a { display: flex; justify-content: space-between; align-items: center; gap: 18px; color: #152537; text-decoration: none; border: 1px solid #e4ebee; background: #fbfcfd; border-radius: 8px; padding: 12px 14px; }
 .history-list a:hover { background: #eff7f8; text-decoration: none; }
 .search-input { max-width: 260px; }

@@ -2,8 +2,8 @@
 
 A DBMS mini project with a Next.js web app, Python/FastAPI backend,
 PostgreSQL records, and a Neo4j dependency/exposure graph. It simulates how
-a fictional infrastructure failure can lead to bank liquidity stress and
-financial contagion. See [the project plan](PROJECT_PLAN.md) and
+one or more fictional infrastructure failures can lead to bank liquidity
+stress and financial contagion. See [the project plan](PROJECT_PLAN.md) and
 [design documentation](docs/DESIGN.md).
 
 The app includes Admin/Analyst login, editable network data, graph rebuild,
@@ -77,12 +77,16 @@ frontend itself does not hold database credentials.
 
 1. Sign in as Admin and open **Network**. Inspect the banks, services,
    dependency lines, creditor arrows and Cypher rankings.
-2. Open **Scenarios**, select **Payment Rail**, set severity to 100%, and run.
-   Bank A and Bank B default; the expected average stress is 49.33%.
+2. Open **Scenarios**, tick **Payment Rail**, set its severity to 100%, and
+   run. Bank A and Bank B default; the expected average stress is 49.33%.
 3. Open a bank's **Inspect** path to see the recorded propagation chain.
-4. On the run page, add 20 to Bank B's liquidity buffer and compare. Bank B
+4. Run a combined scenario: tick **Payment Rail** and **Clearing House**, give
+   each its own severity (for example 50% each), and run. Losses from every
+   failed service are summed per bank before any default decision, and the
+   results header names both services.
+5. On the run page, add 20 to Bank B's liquidity buffer and compare. Bank B
    no longer defaults; the original master data is unchanged.
-5. As Admin, edit a bank/service, inspect the audit list, rebuild the graph,
+6. As Admin, edit a bank/service, inspect the audit list, rebuild the graph,
    and run again. As Analyst, check that edit/rebuild actions are unavailable
    and API-protected.
 

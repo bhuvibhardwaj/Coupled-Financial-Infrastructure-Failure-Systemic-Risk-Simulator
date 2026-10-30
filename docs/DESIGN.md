@@ -8,9 +8,10 @@ its liquidity buffer defaults, passing losses to creditors. The application
 simulates that two-layer cascade on a small fictional network, then compares
 the result with an extra liquidity buffer for one bank.
 
-The network begins with six fictional banks and four services. There is one
-initial service failure per scenario. This is an educational model; it neither
-uses live financial data nor estimates real default probabilities.
+The network begins with six fictional banks and four services. A scenario
+selects one or more services to fail, each with its own severity percentage.
+This is an educational model; it neither uses live financial data nor estimates
+real default probabilities.
 
 Users can sign in as Admin or Analyst, run and search scenarios, inspect saved
 impacts and paths, and compare a mitigation. Admins can edit the network,
@@ -118,10 +119,10 @@ JSON values. The full relational schema, types and constraints are in
 | `dependencies.loss_at_full_failure` | Direct bank loss at 100% service severity | Non-negative numeric, unique bank/service edge |
 | `exposures.amount` | Creditor's claim on debtor | Non-negative numeric, unique directed pair, no self-edge |
 | `exposures.recovery_rate` | Fraction of an exposure recovered after default | 0–1 |
-| `scenarios.severity` | Fraction of full service failure | Integer 0–100 |
+| `scenarios.severity` | Severity of the scenario's primary (first) service | Integer 0–100; the full per-service list lives in `input_snapshot.failures` |
 | `run_impacts.first_affected_round` | 0 for direct operational loss, 1+ for contagion | Non-negative when present |
 | `run_impacts.stress_pct` | Total loss / buffer, capped at 100% | 0–100 |
-| `simulation_runs.input_snapshot` | Original network, service, severity, formula version and optional mitigation | JSONB, saved with run |
+| `simulation_runs.input_snapshot` | Original network, failed services with per-service severities, formula version and optional mitigation | JSONB, saved with run |
 
 Foreign keys reject references to missing banks/services/users. Referential
 restrictions prevent deleting master data already used by saved scenarios or
@@ -146,8 +147,10 @@ current graph. See [`cypher/demo_queries.cypher`](../cypher/demo_queries.cypher)
 
 ## Simulation rules
 
-1. For each bank depending on the failed service, calculate
-   `operational_loss = loss_at_full_failure × severity / 100`.
+1. For each bank, sum its losses over every failed service:
+   `operational_loss = Σ_j (loss_at_full_failure_j × severity_j / 100)`.
+   Aggregating first means a combination of services can exhaust a buffer even
+   when no single failure would.
 2. Default a bank when cumulative operational plus financial losses meet or
    exceed its buffer.
 3. Each newly defaulted debtor passes
@@ -164,6 +167,11 @@ defaults. Bank B has an 80 exposure to A at 25% recovery and loses 60 against
 its buffer of 50, so it defaults. Bank C then loses 72 but has a buffer of 75.
 The two defaults and six-bank average stress of 49.33% can be calculated by
 hand. Adding 20 to B's buffer prevents B's default and its onward loss to C.
+
+Failing two services instead sums their losses first. For example, 50% Payment
+Rail plus 50% Clearing House gives each dependent bank the average of its two
+full-failure losses; if that combined sum crosses a buffer, the bank defaults
+even though neither half would have done so alone.
 
 ## Advanced concepts and query evidence
 
@@ -193,8 +201,9 @@ routes also check scenario ownership. Database URLs and credentials live in
 ## Limitations and future work
 
 The risk score is intentionally simple, and the synthetic amounts do not
-represent actual institutions. There is no live data, recovery timeline,
-multi-service initial failure, or probability model. A future version could
-model recovery times and validate the assumptions against external data.
+represent actual institutions. There is no live data, recovery timeline, or
+probability model. A scenario fails a chosen set of services at their given
+severities at round 0; a future version could stagger failures over time and
+model recovery, then validate the assumptions against external data.
 Full-system test results and application screenshots remain to be captured
 after the local databases and web app are run together.

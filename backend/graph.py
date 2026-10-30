@@ -144,8 +144,13 @@ def network_analysis(expected_version: str) -> dict:
     return {"service_ranking": services, "bank_ranking": banks}
 
 
-def candidate_paths(service_id: int, target_bank_id: int, expected_version: str):
-    """Cypher variable-length path candidates; run results filter actual paths."""
+def candidate_paths(service_ids: list[int], target_bank_id: int, expected_version: str):
+    """Cypher variable-length path candidates; run results filter actual paths.
+
+    Accepts every failed service in the scenario so a path starting from any of
+    them can be verified, not just the primary one.
+    """
+    ids = sorted(set(service_ids))
     with driver() as db:
         with db.session() as session:
             found = session.run(
@@ -154,12 +159,12 @@ def candidate_paths(service_id: int, target_bank_id: int, expected_version: str)
             if found is None or found["version"] != expected_version:
                 raise StaleGraphError("Graph is missing or out of date. Run graph sync.")
             rows = session.run(
-                "MATCH (s:RiskInfrastructure {id: $service_id})<-[:DEPENDS_ON]-"
-                "(origin:RiskInstitution) "
+                "MATCH (s:RiskInfrastructure)<-[:DEPENDS_ON]-(origin:RiskInstitution) "
+                "WHERE s.id IN $service_ids "
                 "MATCH p=(target:RiskInstitution {id: $bank_id})-"
                 "[:EXPOSED_TO*0..5]->(origin) "
                 "RETURN [n IN nodes(p) | n.id] AS reverse_bank_ids "
                 "ORDER BY length(p) LIMIT 20",
-                service_id=service_id, bank_id=target_bank_id,
+                service_ids=ids, bank_id=target_bank_id,
             ).data()
     return [list(reversed(row["reverse_bank_ids"])) for row in rows]

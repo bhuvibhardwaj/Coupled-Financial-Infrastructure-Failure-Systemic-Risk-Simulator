@@ -34,7 +34,8 @@ export type Impact = {
   defaulted: boolean;
   propagation_path: string[];
 };
-export type RunDetail = RunSummary & { impacts: Impact[] };
+export type RunFailure = { service_id: number; severity: number; service_name?: string };
+export type RunDetail = RunSummary & { failures?: RunFailure[]; impacts: Impact[] };
 
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {

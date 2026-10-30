@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Mapping
 
 CENT = Decimal("0.01")
 
@@ -55,33 +56,43 @@ def simulate(
     banks: list[Bank],
     dependencies: list[Dependency],
     exposures: list[Exposure],
-    failed_service_id: int,
-    severity: int,
-    service_name: str | None = None,
+    failures: Mapping[int, int],
+    service_names: Mapping[int, str] | None = None,
 ) -> Result:
-    if not 0 <= severity <= 100:
-        raise ValueError("Severity must be between 0 and 100")
     if not banks:
         raise ValueError("At least one bank is required")
+    if not failures:
+        raise ValueError("At least one failed service is required")
+    if any(not 0 <= severity <= 100 for severity in failures.values()):
+        raise ValueError("Severity must be between 0 and 100")
 
+    names = service_names or {}
     by_id = {bank.id: bank for bank in banks}
     if len(by_id) != len(banks) or any(bank.buffer <= 0 for bank in banks):
         raise ValueError("Banks must have unique IDs and positive buffers")
     impacts = {bank.id: Impact(bank.id, bank.name) for bank in banks}
 
+    # Aggregate each bank's operational loss across every failed service first;
+    # only then decide initial defaults on the combined loss.
+    direct_losses: dict[int, dict[int, Decimal]] = {}
     for edge in dependencies:
         if edge.bank_id not in by_id or edge.loss_at_full_failure < 0:
             raise ValueError("Invalid dependency")
-        if edge.service_id != failed_service_id:
+        severity = failures.get(edge.service_id)
+        if severity is None:
             continue
         loss = money(edge.loss_at_full_failure * Decimal(severity) / 100)
         if loss > 0:
-            impacts[edge.bank_id].operational_loss += loss
-            impacts[edge.bank_id].first_affected_round = 0
-            impacts[edge.bank_id].propagation_path = [
-                service_name or f"Service #{failed_service_id}",
-                by_id[edge.bank_id].name,
-            ]
+            direct_losses.setdefault(edge.bank_id, {})[edge.service_id] = loss
+
+    for bank_id, per_service in direct_losses.items():
+        impact = impacts[bank_id]
+        impact.operational_loss = money(sum(per_service.values(), Decimal("0.00")))
+        impact.first_affected_round = 0
+        # The path starts at the service contributing the largest share.
+        dominant = min(per_service, key=lambda service: (-per_service[service], service))
+        origin = names.get(dominant) or f"Service #{dominant}"
+        impact.propagation_path = [origin, by_id[bank_id].name]
 
     for edge in exposures:
         if (edge.creditor_id not in by_id or edge.debtor_id not in by_id

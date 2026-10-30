@@ -12,9 +12,8 @@ export default function ScenariosPage() {
   const { user, loading, error: sessionError } = useSession();
   const [services, setServices] = useState<Service[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
-  const [serviceId, setServiceId] = useState("");
+  const [selected, setSelected] = useState<Record<number, number>>({});
   const [name, setName] = useState("Payment Rail outage");
-  const [severity, setSeverity] = useState(100);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -24,16 +23,30 @@ export default function ScenariosPage() {
     Promise.all([api<Service[]>("/services"), api<RunSummary[]>("/runs")])
       .then(([list, history]) => {
         setServices(list); setRuns(history);
-        if (list.length) setServiceId(String(list[0].id));
+        if (list.length) setSelected({ [list[0].id]: 100 });
       }).catch((cause: Error) => setError(cause.message));
   }, [user]);
 
+  function toggleService(id: number) {
+    setSelected(previous => {
+      const next = { ...previous };
+      if (id in next) delete next[id]; else next[id] = 100;
+      return next;
+    });
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
+    const failures = Object.entries(selected).map(([id, value]) => ({
+      service_id: Number(id), severity: Number(value),
+    }));
+    if (failures.some(item => !Number.isInteger(item.severity) || item.severity < 0 || item.severity > 100)) {
+      setError("Each severity must be a whole number between 0 and 100."); setBusy(false); return;
+    }
     try {
       const created = await api<{ run_id: number }>("/runs", {
         method: "POST",
-        body: JSON.stringify({ name: name.trim(), failed_service_id: Number(serviceId), severity }),
+        body: JSON.stringify({ name: name.trim(), failures }),
       });
       router.push(`/runs/${created.run_id}`);
     } catch (cause) {
@@ -47,16 +60,31 @@ export default function ScenariosPage() {
   return <main className="shell">
     <Nav user={user} />
     <header className="intro"><p className="eyebrow">Simulations</p><h1>Scenarios</h1>
-      <p>Choose one failed service and a severity. Each run saves the network inputs and results for later comparison.</p></header>
+      <p>Select one or more failed services and set each severity. Each run saves the network inputs and results for later comparison.</p></header>
     <section className="card">
       <h2>Run a new scenario</h2>
-      <form onSubmit={submit} className="scenario-form with-top-gap">
+      <form onSubmit={submit} className="stack-form">
         <label>Scenario name<input value={name} onChange={event => setName(event.target.value)} required maxLength={100} /></label>
-        <label>Failed service<select value={serviceId} onChange={event => setServiceId(event.target.value)} required>
-          {services.map(service => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
-        <label>Severity (%)<input type="number" min="0" max="100" value={severity}
-          onChange={event => setSeverity(Number(event.target.value))} required /></label>
-        <button disabled={busy || !serviceId} type="submit">{busy ? "Running…" : "Run simulation"}</button>
+        <div>
+          <p className="field-label">Failed services</p>
+          <p className="hint">Tick each service to fail and set its severity from 0 to 100%.</p>
+          <div className="editable-list">
+            {services.map(service => {
+              const chosen = service.id in selected;
+              return <div className="editable-row service-option" key={service.id}>
+                <label className="service-choice">
+                  <input type="checkbox" checked={chosen} onChange={() => toggleService(service.id)} />
+                  <span>{service.name} <small>{service.category}</small></span>
+                </label>
+                <input className="severity-input" type="number" min="0" max="100" step="1"
+                  value={chosen ? selected[service.id] : ""} disabled={!chosen} required={chosen}
+                  aria-label={`${service.name} severity`}
+                  onChange={event => setSelected(previous => ({ ...previous, [service.id]: Number(event.target.value) }))} />
+              </div>;
+            })}
+          </div>
+        </div>
+        <button disabled={busy || !Object.keys(selected).length} type="submit">{busy ? "Running…" : "Run simulation"}</button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}
     </section>
