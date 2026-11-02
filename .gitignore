@@ -1,4 +1,6 @@
 .venv/
+.venv-windows/
+.local-logs/
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -7,3 +9,24 @@ __pycache__/
 frontend/node_modules/
 frontend/.next/
 frontend/*.tsbuildinfo
+
+# Local coursework, reports, diagrams and screenshots (not application code).
+*.pdf
+*.doc
+*.docx
+*.odt
+*.ppt
+*.pptx
+*.drawio
+*.pgerd
+/docs/
+/PROJECT_PLAN.md
+/problem_statement.txt
+
+# Tools used only to generate/verify local documents.
+/backend/export_database.py
+/backend/export_chen.py
+/scripts/build_report.py
+/scripts/capture_report.py
+/scripts/render_report.ps1
+/sql/verify_er_diagram.sql

@@ -17,8 +17,8 @@ ITERATIONS = 600_000
 
 
 def hash_password(password: str) -> str:
-    if len(password) < 12:
-        raise ValueError("Password must have at least 12 characters")
+    if len(password) < 8:
+        raise ValueError("Password must have at least 8 characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, ITERATIONS)
     return f"pbkdf2_sha256${ITERATIONS}${salt.hex()}${digest.hex()}"
@@ -64,20 +64,22 @@ def admin_user(user: dict = Depends(current_user)) -> dict:
 
 
 class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=255)
+    email: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=1024)
 
 
 @router.post("/login")
 def login(body: LoginRequest, response: Response):
+    identity = body.email.strip().lower()
+    identity = {"admin": "admin@example.com", "analyst": "analyst@example.com"}.get(identity, identity)
     with connect() as conn:
         user = conn.execute(
             "SELECT id, name, email, role, password_hash FROM users "
             "WHERE lower(email) = lower(%s) AND active",
-            (body.email.strip(),),
+            (identity,),
         ).fetchone()
         if user is None or not verify_password(body.password, user["password_hash"]):
-            raise HTTPException(401, "Invalid email or password")
+            raise HTTPException(401, "Incorrect email/username or password. Please try again.")
         token = secrets.token_urlsafe(32)
         conn.execute(
             "INSERT INTO user_sessions (token_hash, user_id, expires_at) "
