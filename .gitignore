@@ -26,7 +26,9 @@ frontend/*.tsbuildinfo
 # Tools used only to generate/verify local documents.
 /backend/export_database.py
 /backend/export_chen.py
+/backend/export_chen_exact.py
 /scripts/build_report.py
 /scripts/capture_report.py
 /scripts/render_report.ps1
 /sql/verify_er_diagram.sql
+.local-tools/
