@@ -43,7 +43,24 @@ Permissions and run ownership are enforced by the FastAPI backend as well as
 reflected in the frontend controls.
 
 
-## Stack and files
+## Tech stack
+
+| Layer | Technologies | Purpose |
+|---|---|---|
+| Frontend | Next.js, React, TypeScript, CSS | Dashboard, network visualization, admin forms, scenarios and results. |
+| Backend / API | Python, FastAPI, Uvicorn, Pydantic | REST endpoints, request validation, authentication and simulation coordination. |
+| Simulation | Python `Decimal` | Deterministic loss calculations, default propagation and buffer comparisons. |
+| Relational database | PostgreSQL 17, SQL, PL/pgSQL | Master data, users/sessions, saved runs, constraints, views, functions and audit triggers. |
+| Graph database | Neo4j 5, Cypher | Network projection, relationship traversal and connectivity rankings. |
+| Database drivers | pg8000, Neo4j Python driver | Backend connections and parameterized database queries. |
+| Local environment | Docker Compose, Python virtual environment, Node.js/npm, PowerShell | Database containers, dependencies and one-shot Windows startup. |
+| Verification | Python `unittest`, TypeScript compiler, Next.js build | Focused logic tests, type checking and frontend compilation. |
+
+Request flow: **Browser → Next.js → FastAPI → PostgreSQL / Neo4j**.
+Python runs the cascade; PostgreSQL is the source of truth and Neo4j is a
+rebuildable graph projection.
+
+## Project files
 
 - `frontend/`: Next.js, React and TypeScript interface.
 - `backend/`: Python/FastAPI API, sessions, simulation and database access.
